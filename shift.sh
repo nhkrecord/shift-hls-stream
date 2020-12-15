@@ -77,7 +77,7 @@ function update_symlink () {
 
 function delete_old_files () {
   find "${DATA_DIR}" -depth -mindepth 1 -mmin "+${MAX_AGE_MINUTES}" \
-    \( -name '*.m3u8' -o -name '*.ts' \) -o \( -type d -empty \) ${FIND_DEBUG_FLAGS} -delete
+    \( \( -name '*.m3u8' -o -name '*.ts' \) -o \( -type d -empty \) \) ${FIND_DEBUG_FLAGS} -delete
 }
 
 function main () {
