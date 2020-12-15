@@ -16,25 +16,38 @@ STREAM_DELAY_MINUTES=$(echo "${STREAM_DELAY} / 60" | bc -l)
 MAX_AGE_MINUTES=$(echo "${MAX_AGE} / 60" | bc -l)
 CURL_DEBUG_FLAGS=$([[ -n "${DEBUG}" ]] && printf -- '-v' || printf -- '-s')
 FIND_DEBUG_FLAGS=$([[ -n "${DEBUG}" ]] && printf -- '-print' || printf -- '')
+LOCK_DIR="/tmp"
 
 function get_index () {
   curl ${CURL_DEBUG_FLAGS} --max-time 5 "${STREAM_URL}"
 }
 
-function ts_files () {
+function list_ts_files () {
   local TEXT="${1}"
+
   echo "${TEXT}" | grep '.ts$'
+}
+
+function lock_file () {
+  local INPUT="${1}"
+  local HASH="$(echo -n "${INPUT}" | md5sum | cut -d' ' -f1)"
+
+  echo "${LOCK_DIR}/${HASH}"
 }
 
 function download_ts_files () {
   local FILE_LIST="${1}"
 
-  for TS_PATH in $FILE_LIST; do
+  for TS_PATH in ${FILE_LIST}; do
     local SAVE_PATH="${DATA_DIR}/${TS_PATH}"
     local SAVE_DIR="$(dirname "${SAVE_PATH}")"
+
     mkdir -p "${SAVE_DIR}"
     if [[ ! -f "${SAVE_PATH}" || $(wc -c "${SAVE_PATH}" | cut -d' ' -f1) -lt 50000 ]]; then
-      curl ${CURL_DEBUG_FLAGS} --max-time 10 "${BASE_URL}/${TS_PATH}" -o "${SAVE_PATH}"
+      local TS_URL="${BASE_URL}/${TS_PATH}"
+      local LOCK_FILE="$(lock_file "${TS_URL}")"
+
+      flock -n "${LOCK_FILE}" curl ${CURL_DEBUG_FLAGS} --max-time 15 ${TS_URL} -o "${SAVE_PATH}"
     fi
   done
 }
@@ -64,7 +77,7 @@ function write_index () {
   local TEXT="${1}"
   local TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%S)
 
-  echo "${TEXT}" > "${DATA_DIR}/index-${TIMESTAMP}.m3u8"
+  echo "${TEXT}" >| "${DATA_DIR}/index-${TIMESTAMP}.m3u8"
 }
 
 function update_symlink () {
@@ -83,21 +96,20 @@ function delete_old_files () {
 function main () {
   while true; do
 
-    local INDEX_CONTENT="$(get_index)"
-    local TS_FILES="$(ts_files "$INDEX_CONTENT")"
+    update_symlink
+    delete_old_files &
 
+    local INDEX_CONTENT="$(get_index)"
+    local TS_FILES="$(list_ts_files "$INDEX_CONTENT")"
     if [[ -z "${TS_FILES}" ]]; then
       echo 'No .ts files found'
       continue
     fi
 
-    download_ts_files "${TS_FILES}"
-
     local SHIFTED_INDEX="$(shift_index_dates "${INDEX_CONTENT}")"
 
     write_index "${SHIFTED_INDEX}"
-    update_symlink
-    delete_old_files
+    download_ts_files "${TS_FILES}" &
 
     sleep 2
 
