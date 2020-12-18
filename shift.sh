@@ -38,6 +38,7 @@ function lock_file () {
 function download_ts_files () {
   local FILE_LIST="${1}"
 
+  IFS=$'\n'
   for TS_PATH in ${FILE_LIST}; do
     local SAVE_PATH="${DATA_DIR}/${TS_PATH}"
     local SAVE_DIR="$(dirname "${SAVE_PATH}")"
@@ -50,6 +51,8 @@ function download_ts_files () {
       flock -n "${LOCK_FILE}" curl ${CURL_DEBUG_FLAGS} --max-time 15 ${TS_URL} -o "${SAVE_PATH}"
     fi
   done
+  unset IFS
+
 }
 
 function shift_date () {
@@ -62,6 +65,7 @@ function shift_date () {
 function shift_index_dates () {
   local TEXT="${1}"
 
+  IFS=$'\n'
   for LINE in ${TEXT}; do
     if [[ "${LINE}" =~ "EXT-X-PROGRAM-DATE-TIME" ]]; then
       local DATE=$(echo "${LINE}" | sed -E 's/^[^:]+://')
@@ -71,6 +75,8 @@ function shift_index_dates () {
       echo "${LINE}"
     fi
   done
+  unset IFS
+
 }
 
 function write_index () {
